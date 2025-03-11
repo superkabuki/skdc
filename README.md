@@ -15,7 +15,7 @@
 ___
 
 ##  Super Karate Death Car is fast.
-![image](https://github.com/user-attachments/assets/88f11726-45e6-4933-855d-6e7d0c22c5e9)
+![image](https://github.com/user-attachments/assets/edc29afe-d198-44e2-a230-567acbcddbdf)
 
 
 
