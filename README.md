@@ -106,62 +106,93 @@ go build skdcdemo.go
 ```go
 ./skdcdemo a_video_with_scte35.ts
 ```
-
-#### `output`
-```json
-Next File: mpegts/out.ts
-
+			
+### SCTE-35 Cues
+```go
+type Cue struct {
+	InfoSection *InfoSection  
+	Command     *Command          
+	Dll         uint16       `json:"DescriptorLoopLength"`
+	Descriptors []Descriptor `json:",omitempty"`
+	Crc32       string
+	PacketData  *packetData `json:",omitempty"`
+}
+```
+* Output is JSON and looks like this.
+```awk
 {
-    "Name": "Splice Info Section",
-    "TableID": "0xfc",
-    "SectionSyntaxIndicator": false,
-    "Private": false,
-    "Reserved": "0x3",
-    "SectionLength": 49,
-    "ProtocolVersion": 0,
-    "EncryptedPacket": false,
-    "EncryptionAlgorithm": 0,
-    "PtsAdjustment": 0,
-    "CwIndex": "0x0",
-    "Tier": "0xfff",
-    "SpliceCommandLength": 20,
-    "SpliceCommandType": 5,
-    "DescriptorLoopLength": 12,
+    "InfoSection": {
+        "Name": "Splice Info Section",
+        "TableID": "0xfc",
+        "SectionSyntaxIndicator": false,
+        "Private": false,
+        "SapType": 3,
+        "SapDetails": "No Sap Type",
+        "SectionLength": 44,
+        "ProtocolVersion": 0,
+        "EncryptedPacket": false,
+        "EncryptionAlgorithm": 0,
+        "PtsAdjustment": 2.3,
+        "CwIndex": "0x0",
+        "Tier": "0xfff",
+        "CommandLength": 10,
+        "CommandType": 5
+    },
+
     "Command": {
         "Name": "Splice Insert",
         "CommandType": 5,
-        "SpliceEventID": "0x5d",
-        "OutOfNetworkIndicator": true,
+        "SpliceEventID": 1,
+        "SpliceEventCancelIndicator": false,
+        "OutOfNetworkIndicator": false,
         "ProgramSpliceFlag": true,
-        "DurationFlag": true,
-        "BreakDuration": 90.023266,
-        "TimeSpecifiedFlag": true,
-        "PTS": 38113.135577
+        "DurationFlag": false,
+        "BreakDuration": 0,
+        "BreakAutoReturn": false,
+        "SpliceImmediateFlag": true,
+        "EventIDComplianceFlag": true,
+        "UniqueProgramID": 39321,
+        "AvailNum": 1,
+        "AvailExpected": 1
     },
+    "DescriptorLoopLength": 17,
+
     "Descriptors": [
         {
-            "Tag": 1,
-            "Length": 10,
+            "Tag": 2,
+            "Length": 15,
+            "Name": "Segmentation Descriptor",
             "Identifier": "CUEI",
-            "Name": "DTMF Descriptor",
-            "PreRoll": 177,
-            "DTMFCount": 4,
-            "DTMFChars": 4186542473
+            "SegmentationEventID": "0x0",
+            "SegmentationEventCancelIndicator": false,
+            "SegmentationEventIDComplianceIndicator": true,
+            "ProgramSegmentationFlag": true,
+            "SegmentationDurationFlag": false,
+            "DeliveryNotRestrictedFlag": false,
+            "WebDeliveryAllowedFlag": false,
+            "NoRegionalBlackoutFlag": false,
+            "ArchiveAllowedFlag": false,
+            "DeviceRestrictions": "Restrict Group 0",
+            "SegmentationDuration": 0,
+            "SegmentationMessage": "Provider Placement Opportunity End",
+            "SegmentationUpidType": 1,
+            "SegmentationUpidLength": 0,
+            "SegmentationUpid": null,
+            "SegmentationTypeID": 53,
+            "SegmentNum": 0,
+            "SegmentsExpected": 0,
+            "SubSegmentNum": 0,
+            "SubSegmentsExpected": 0
         }
     ],
-    "Packet": {
-        "PacketNumber": 73885,
-        "Pid": 515,
-        "Program": 51,
-        "Pcr": 38104.526277,
-        "Pts": 38105.268588
+    "Crc32": " 0x2d974195",
+    "PacketData": {
+        "Pid": 258,
+        "Program": 1,
+        "Pts": 72951.196988
     }
 }
-
-
 ```
-			
-	
 
 ### `Parse base64 encoded SCTE-35`
 ```go
@@ -237,6 +268,9 @@ func main(){
 
 ```
 ### `Use Dot notation to access SCTE-35 Cue values`
+* SuperKarate DeathCar doesn't use interfaces for SCTE-35 data
+* SCTE-35 Data can be accessed directly via dot notation 
+
 ```go
 
 /**
