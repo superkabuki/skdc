@@ -24,7 +24,7 @@ type DTMFDescriptor struct {
 	TagLenNameId
 	PreRoll   uint8
 	DTMFCount uint8
-	DTMFChars uint64
+	DTMFChars string
 }
 
 // Segmentation Descriptor
@@ -63,8 +63,10 @@ type TimeDescriptor struct {
 /*
 *
 
-	Descriptor is the combination of all the descriptors
-	this is to maintain dot notation in the Cue struct.
+	Descriptor is the combination of all the descriptors,
+	works kind of like a union, it's either an AvailDescriptor,
+	or DTMFDescriptor, or SegmentationDescriptor or TimeDescriptor.
+	
 
 *
 */
@@ -169,9 +171,9 @@ func (dscptr *Descriptor) decodeDTMFDescriptor(bd *bitDecoder, tag uint8, length
 	dscptr.Identifier = bd.asAscii(32)
 	dscptr.Name = "DTMF Descriptor"
 	dscptr.PreRoll = bd.uInt8(8)
-	dscptr.DTMFCount = bd.uInt8(3)
+	dscptr.DTMFCount = bd.uInt8(8)>>5
 	//bd.goForward(5)
-	dscptr.DTMFChars = bd.uInt64(uint(8 * dscptr.DTMFCount))
+	dscptr.DTMFChars = bd.asAscii(uint(8 * dscptr.DTMFCount))
 	dscptr.DTMFDescriptor.TagLenNameId = dscptr.TagLenNameId
 
 }
