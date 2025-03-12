@@ -17,11 +17,10 @@ const initPoly = 0x104C11DB7 // Polynomial value for cRC32 table
 // bytecrc creates the values used to populate the table
 func bytecrc(crc int, aPoly int) int {
 	for i := 0; i < eight; i++ {
+		crc = crc << one
 		if crc&mask != zero {
-			crc = crc<<one ^ aPoly
-		} else {
-			crc = crc << one
-		}
+			crc = crc ^ aPoly
+		} 
 	}
 	return int(crc & initValue)
 }
