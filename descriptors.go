@@ -1,316 +1,202 @@
 package skdc
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
-// Tag, Length , Name and Identifier for Descriptors
-type TagLenNameId struct {
-	Tag        uint8
-	Length     uint8
-	Name       string
-	Identifier string
+var uriUpids = map[uint8]string{
+	0x01: "Deprecated",
+	0x02: "Deprecated",
+	0x03: "AdID",
+	0x07: "TID",
+	0x09: "ADI",
+	0x10: "UUID",
+	0x11: "ACR",
+	0x0b: "ATSC",
+	0x0c: "MPU",
+	0x0d: "MID",
+	0x0e: "ADS Info",
+	0x0f: "URI",
 }
 
-// Avail Descriptor
-type AvailDescriptor struct {
-	TagLenNameId
-	ProviderAvailID uint32
-}
-
-// DTMF Descriptor
-type DTMFDescriptor struct {
-	TagLenNameId
-	PreRoll   uint8
-	DTMFCount uint8
-	DTMFChars string
-}
-
-// Segmentation Descriptor
-type SegmentationDescriptor struct {
-	TagLenNameId
-	SegmentationEventID                    string
-	SegmentationEventCancelIndicator       bool
-	SegmentationEventIDComplianceIndicator bool
-	ProgramSegmentationFlag                bool
-	SegmentationDurationFlag               bool
-	DeliveryNotRestrictedFlag              bool
-	WebDeliveryAllowedFlag                 bool
-	NoRegionalBlackoutFlag                 bool
-	ArchiveAllowedFlag                     bool
-	DeviceRestrictions                     string
-	SegmentationDuration                   float64
-	SegmentationMessage                    string
-	SegmentationUpidType                   uint8
-	SegmentationUpidLength                 uint8
-	SegmentationUpid                       *Upid
-	SegmentationTypeID                     uint8
-	SegmentNum                             uint8
-	SegmentsExpected                       uint8
-	SubSegmentNum                          uint8
-	SubSegmentsExpected                    uint8
-}
-
-// Time Descriptor
-type TimeDescriptor struct {
-	TagLenNameId
-	TAISeconds uint64
-	TAINano    uint32
-	UTCOffset  uint16
-}
-
-/*
-*
-
-	Descriptor is the combination of all the descriptors,
-	works kind of like a union, it's either an AvailDescriptor,
-	or DTMFDescriptor, or SegmentationDescriptor or TimeDescriptor.
+type NameTypeValue struct {
+	Name             string `json:",omitempty"`
+	UpidType         uint8  `json:",omitempty"`
+	Value            string `json:",omitempty"`	
 	
-
-*
-*/
-type Descriptor struct {
-	TagLenNameId
-	AvailDescriptor
-	DTMFDescriptor
-	SegmentationDescriptor
-	TimeDescriptor
 }
 
+type Atsc struct {
+	NameTypeValue
+	TSID             uint16 `json:",omitempty"`
+	EndOfDay         uint8  `json:",omitempty"`
+	UniqueFor        uint16 `json:",omitempty"`
+	ContentID        []byte `json:",omitempty"`	
+}
+
+type Mpu struct {
+	NameTypeValue
+	FormatIdentifier string `json:",omitempty"`
+	PrivateData      []byte `json:",omitempty"`	
+}	
+
+type Mid struct {
+	NameTypeValue
+	Upids            []Upid `json:",omitempty"`
+	
+}
 /*
-		 *
-		    Custom MarshalJSON
-		        Marshal a Descriptor into
+Upid is the Struct for Segmentation Upids
 
-	            0x0: AvailDescriptor,
-			    0x1: DTMFDescriptor,
-			    0x2: SegmentationDescriptor,
-			    0x3: TimeDescriptor,
-		        or just return the Descriptor
-
-*
+Non-standard UPID types are returned as bytes.
 */
-func (dscptr *Descriptor) MarshalJSON() ([]byte, error) {
-	switch dscptr.Tag {
-	case 0x0:
-		return json.Marshal(&dscptr.AvailDescriptor)
-
-	case 0x1:
-		return json.Marshal(&dscptr.DTMFDescriptor)
-
-	case 0x2:
-		return json.Marshal(&dscptr.SegmentationDescriptor)
-
-	case 0x3:
-		return json.Marshal(&dscptr.TimeDescriptor)
-
-	}
-	type Funk Descriptor
-	return json.Marshal(&struct{ *Funk }{(*Funk)(dscptr)})
+type Upid struct {
+	NameTypeValue
+	Atsc
+	Mpu
+	Mid
 }
 
-// Return Descriptor as JSON
-func (dscptr *Descriptor) Json() string {
-	stuff, err := dscptr.MarshalJSON()
-	chk(err)
-	return string(stuff)
-}
+// Decode Upids
+func (upid *Upid) decode(bd *bitDecoder, upidType uint8, upidlen uint8) {
 
-// Print Descriptor as JSON
-func (dscptr *Descriptor) Show() {
-	fmt.Printf(dscptr.Json())
-}
+	upid.UpidType = upidType
 
-/*
-*
-Decode returns a Splice Descriptor by tag.
-
-	The following Splice Descriptors are recognized.
-
-	    0x0: Avail Descriptor,
-	    0x1: DTMF Descriptor,
-	    0x2: Segmentation Descriptor,
-	    0x3: Time Descriptor,
-
-*
-*/
-func (dscptr *Descriptor) decode(bd *bitDecoder, tag uint8, length uint8) {
-	switch tag {
-	case 0x0:
-		dscptr.Tag = 0x0
-		dscptr.decodeAvailDescriptor(bd, tag, length)
-	case 0x1:
-		dscptr.Tag = 0x1
-		dscptr.decodeDTMFDescriptor(bd, tag, length)
-	case 0x2:
-		dscptr.Tag = 0x2
-		dscptr.decodeSegmentationDescriptor(bd, tag, length)
-	case 0x3:
-		dscptr.Tag = 0x3
-		dscptr.decodeTimeDescriptor(bd, tag, length)
-	}
-}
-
-
-// Decode for  Avail Descriptors
-func (dscptr *Descriptor) decodeAvailDescriptor(bd *bitDecoder, tag uint8, length uint8) {
-	dscptr.Tag = tag
-	dscptr.Length = length
-	dscptr.Identifier = bd.asAscii(32)
-	dscptr.Name = "Avail Descriptor"
-	dscptr.ProviderAvailID = bd.uInt32(32)
-	dscptr.AvailDescriptor.TagLenNameId = dscptr.TagLenNameId
-
-}
-
-// Decode for DTMF Splice Descriptor
-func (dscptr *Descriptor) decodeDTMFDescriptor(bd *bitDecoder, tag uint8, length uint8) {
-	dscptr.Tag = tag
-	dscptr.Length = length
-	dscptr.Identifier = bd.asAscii(32)
-	dscptr.Name = "DTMF Descriptor"
-	dscptr.PreRoll = bd.uInt8(8)
-	dscptr.DTMFCount = bd.uInt8(8)>>5
-	//bd.goForward(5)
-	dscptr.DTMFChars = bd.asAscii(uint(8 * dscptr.DTMFCount))
-	dscptr.DTMFDescriptor.TagLenNameId = dscptr.TagLenNameId
-
-}
-
-// Decode for the Time Descriptor
-func (dscptr *Descriptor) decodeTimeDescriptor(bd *bitDecoder, tag uint8, length uint8) {
-	dscptr.Tag = tag
-	dscptr.Length = length
-	dscptr.Identifier = bd.asAscii(32)
-	dscptr.Name = "Time Descriptor"
-	dscptr.TAISeconds = bd.uInt64(48)
-	dscptr.TAINano = bd.uInt32(32)
-	dscptr.UTCOffset = bd.uInt16(16)
-	dscptr.TimeDescriptor.TagLenNameId = dscptr.TagLenNameId
-
-}
-
-// Decode for the Segmentation Descriptor
-func (dscptr *Descriptor) decodeSegmentationDescriptor(bd *bitDecoder, tag uint8, length uint8) {
-	dscptr.Tag = tag
-	dscptr.Length = length
-	dscptr.Identifier = bd.asAscii(32)
-	dscptr.Name = "Segmentation Descriptor"
-	dscptr.SegmentationEventID = bd.asHex(32)
-	dscptr.SegmentationEventCancelIndicator = bd.asFlag()
-	dscptr.SegmentationEventIDComplianceIndicator = bd.asFlag()
-	bd.goForward(6)
-	if !dscptr.SegmentationEventCancelIndicator {
-		dscptr.decodeSegFlags(bd)
-		dscptr.decodeSegmentation(bd)
-	}
-	dscptr.SegmentationDescriptor.TagLenNameId = dscptr.TagLenNameId
-
-}
-
-func (dscptr *Descriptor) decodeSegFlags(bd *bitDecoder) {
-	dscptr.ProgramSegmentationFlag = bd.asFlag()
-	dscptr.SegmentationDurationFlag = bd.asFlag()
-	dscptr.DeliveryNotRestrictedFlag = bd.asFlag()
-	if !dscptr.DeliveryNotRestrictedFlag {
-		dscptr.WebDeliveryAllowedFlag = bd.asFlag()
-		dscptr.NoRegionalBlackoutFlag = bd.asFlag()
-		dscptr.ArchiveAllowedFlag = bd.asFlag()
-		dscptr.DeviceRestrictions = table20[bd.uInt8(2)] // 8
-	} else {
-		bd.goForward(5)
-	}
-}
-
-func (dscptr *Descriptor) decodeSegmentation(bd *bitDecoder) {
-	if dscptr.SegmentationDurationFlag {
-		dscptr.SegmentationDuration = bd.as90k(40)
-	}
-	dscptr.SegmentationUpidType = bd.uInt8(8)
-	dscptr.SegmentationUpidLength = bd.uInt8(8)
-	if dscptr.SegmentationUpidLength > 0 {
-		dscptr.SegmentationUpid = &Upid{}
-		dscptr.SegmentationUpid.decode(bd, dscptr.SegmentationUpidType, dscptr.SegmentationUpidLength)
-	}
-	dscptr.SegmentationTypeID = bd.uInt8(8)
-	mesg, ok := table22[dscptr.SegmentationTypeID]
+	name, ok := uriUpids[upidType]
 	if ok {
-		dscptr.SegmentationMessage = mesg
-	}
-	dscptr.SegmentNum = bd.uInt8(8)
-	dscptr.SegmentsExpected = bd.uInt8(8)
-	subSegIDs := []uint16{0x30, 0x32, 0x34, 0x36, 0x38, 0x3A, 0x44, 0x46}
-	if IsIn(subSegIDs, uint16(dscptr.SegmentationTypeID)) {
-		dscptr.SubSegmentNum = bd.uInt8(8)
-		dscptr.SubSegmentsExpected = bd.uInt8(8)
-	}
-}
-
-func (dscptr *Descriptor) encode(be *bitEncoder) {
-	switch dscptr.Tag {
-	case 0x0:
-		dscptr.encodeAvailDescriptor(be)
-	case 0x2:
-		dscptr.encodeSegmentationDescriptor(be)
-	}
-}
-
-// Encode for Avail Descriptors
-func (dscptr *Descriptor) encodeAvailDescriptor(be *bitEncoder) {
-	be.Add(uint32(dscptr.ProviderAvailID), 32)
-}
-
-// Encode a segmentation descriptor
-func (dscptr *Descriptor) encodeSegmentationDescriptor(be *bitEncoder) {
-	dscptr.SegmentationDescriptor.TagLenNameId = dscptr.TagLenNameId
-
-	be.AddHex64(dscptr.SegmentationEventID, 32)
-	be.Add(dscptr.SegmentationEventCancelIndicator, 1)
-	be.Add(dscptr.SegmentationEventIDComplianceIndicator, 1)
-	be.Reserve(6)
-	if !dscptr.SegmentationEventCancelIndicator {
-		dscptr.encodeFlags(be)
-		dscptr.encodeSegmentation(be)
-	}
-}
-
-func (dscptr *Descriptor) encodeFlags(be *bitEncoder) {
-	be.Add(dscptr.ProgramSegmentationFlag, 1)
-	be.Add(dscptr.SegmentationDurationFlag, 1)
-	be.Add(dscptr.DeliveryNotRestrictedFlag, 1)
-	if !dscptr.DeliveryNotRestrictedFlag {
-		be.Add(dscptr.WebDeliveryAllowedFlag, 1)
-		be.Add(dscptr.NoRegionalBlackoutFlag, 1)
-		be.Add(dscptr.ArchiveAllowedFlag, 1)
-		//   a_key = k_by_v(table20, dscptr.device_restrictions)
-		//     nbin.add_int(a_key, 2)
-		be.Add(3, 2) //  dscptr.device_restrictions
+		upid.Name = name
+		upid.uri(bd, upidlen)
 	} else {
-		be.Reserve(5)
+
+		switch upidType {
+		case 0x05, 0x06:
+			upid.Name = "ISAN"
+			upid.isan(bd, upidlen)
+		case 0x08:
+			upid.Name = "AiringID"
+			upid.airid(bd, upidlen)
+		case 0x0a:
+			upid.Name = "EIDR"
+			upid.eidr(bd, upidlen)
+		case 0x0b:
+			upid.Name = "ATSC"
+			upid.atsc(bd, upidlen)
+		case 0x0c:
+			upid.Name = "MPU"
+			upid.mpu(bd, upidlen)
+		case 0x0d:
+			upid.Name = "MID"
+			upid.mid(bd, upidlen)
+		default:
+			upid.Name = "UPID"
+			upid.uri(bd, upidlen)
+		}
 	}
 }
 
-func (dscptr *Descriptor) encodeSegmentation(be *bitEncoder) {
-	if dscptr.SegmentationDurationFlag {
-		be.Add(float64(dscptr.SegmentationDuration), 40)
-	}
-	be.Add(dscptr.SegmentationUpidType, 8)
-	be.Add(dscptr.SegmentationUpidLength, 8)
-	if dscptr.SegmentationUpidLength > 0 {
-		dscptr.SegmentationUpid.encode(be, dscptr.SegmentationUpidType)
-	}
-	be.Add(dscptr.SegmentationTypeID, 8)
-	dscptr.encodeSegments(be)
+// Decode for AirId
+func (upid *Upid) airid(bd *bitDecoder, upidlen uint8) {
+	upid.Value = bd.asHex(uint(upidlen << 3))
 }
 
-func (dscptr *Descriptor) encodeSegments(be *bitEncoder) {
-	be.Add(dscptr.SegmentNum, 8)
-	be.Add(dscptr.SegmentsExpected, 8)
-	subSegIDs := []uint16{0x30, 0x32, 0x34, 0x36, 0x38, 0x3A, 0x44, 0x46}
-	if IsIn(subSegIDs, uint16(dscptr.SegmentationTypeID)) {
-		be.Add(dscptr.SubSegmentNum, 8)
-		be.Add(dscptr.SubSegmentsExpected, 8)
+// Decode for Isan Upid
+func (upid *Upid) isan(bd *bitDecoder, upidlen uint8) {
+	upid.Value = bd.asAscii(uint(upidlen << 3))
+}
+
+// Decode for URI Upid
+func (upid *Upid) uri(bd *bitDecoder, upidlen uint8) {
+	upid.Value = bd.asAscii(uint(upidlen) << 3)
+}
+
+// Decode for ATSC Upid
+func (upid *Upid) atsc(bd *bitDecoder, upidlen uint8) {
+	upid.TSID = bd.uInt16(16)
+	bd.goForward(2)
+	upid.EndOfDay = bd.uInt8(5)
+	upid.UniqueFor = bd.uInt16(9)
+	upid.ContentID = bd.asBytes(uint((upidlen - 4) << 3))
+	upid.NameTypeValue=upid.NameTypeValue
+}
+
+// Decode for EIDR Upid
+func (upid *Upid) eidr(bd *bitDecoder, upidlen uint8) {
+	head := bd.uInt16(16)
+	// Switching to Compact Binary Format
+	var astring string
+	nibbles := 20
+	for i := 0; i < nibbles; i++ {
+		astring = fmt.Sprintf("%v%x", astring, bd.uInt8(4))
+	}
+	upid.Value = fmt.Sprintf("0x%x%v", head, astring)
+}
+
+// Decode for MPU Upid
+func (upid *Upid) mpu(bd *bitDecoder, upidlen uint8) {
+	ulb := uint(upidlen) << 3
+	upid.FormatIdentifier = bd.asHex(32)
+	upid.PrivateData = bd.asBytes(ulb - 32)
+	upid.Mpu.NameTypeValue=upid.NameTypeValue
+}
+
+// Decode for MID Upid
+func (upid *Upid) mid(bd *bitDecoder, upidlen uint8) {
+	var i uint8
+	i = 0
+	for i < upidlen {
+		utype := bd.uInt8(8)
+		i++
+		ulen := bd.uInt8(8)
+		i++
+		i += ulen
+		var mupid Upid
+		upid.decode(bd, utype, ulen)
+		upid.Upids = append(upid.Upids, mupid)
+	}
+	upid.Mid.NameTypeValue=upid.NameTypeValue
 	}
 
+// Encode Upids
+func (upid *Upid) encode(be *bitEncoder, upidType uint8) {
+	switch upid.UpidType {
+	case 0x05, 0x06:
+		upid.encodeIsan(be)
+	case 0x08:
+		upid.encodeAirId(be)
+	case 0x0a:
+		upid.encodeEidr(be)
+	default:
+		upid.encodeUri(be)
+	}
+}
+
+// encode for Uri Upids
+func (upid *Upid) encodeUri(be *bitEncoder) {
+	if len(upid.Value) > 0 {
+		be.AddBytes([]byte(upid.Value), uint(len(upid.Value)<<3))
+	}
+}
+
+// encode for AirId
+func (upid *Upid) encodeAirId(be *bitEncoder) {
+	if len(upid.Value) > 0 {
+		be.AddHex64(upid.Value, uint(len(upid.Value)<<3))
+	}
+}
+
+// encode for Isan Upid
+func (upid *Upid) encodeIsan(be *bitEncoder) {
+	if len(upid.Value) > 0 {
+		be.AddBytes([]byte(upid.Value), uint(len(upid.Value)<<3))
+	}
+}
+
+// encode for Eidr Upid
+func (upid *Upid) encodeEidr(be *bitEncoder) {
+	be.AddHex64(upid.Value[:6], 16)
+	substring := upid.Value[6:]
+	for _, c := range substring {
+		hexed := fmt.Sprintf("0x%s", string(c))
+		be.AddHex64(hexed, 4)
+	}
 }
