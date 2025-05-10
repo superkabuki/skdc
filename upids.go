@@ -19,23 +19,42 @@ var uriUpids = map[uint8]string{
 	0x0f: "URI",
 }
 
+type NameTypeValue struct {
+	Name             string `json:",omitempty"`
+	UpidType         uint8  `json:",omitempty"`
+	Value            string `json:",omitempty"`	
+	
+}
+
+type Atsc struct {
+	NameTypeValue
+	TSID             uint16 `json:",omitempty"`
+	EndOfDay         uint8  `json:",omitempty"`
+	UniqueFor        uint16 `json:",omitempty"`
+	ContentID        []byte `json:",omitempty"`	
+}
+
+type Mpu struct {
+	NameTypeValue
+	FormatIdentifier string `json:",omitempty"`
+	PrivateData      []byte `json:",omitempty"`	
+}	
+
+type Mid struct {
+	NameTypeValue
+	Upids            []Upid `json:",omitempty"`
+	
+}
 /*
 Upid is the Struct for Segmentation Upids
 
 Non-standard UPID types are returned as bytes.
 */
 type Upid struct {
-	Name             string `json:",omitempty"`
-	UpidType         uint8  `json:",omitempty"`
-	Value            string `json:",omitempty"`
-	TSID             uint16 `json:",omitempty"`
-	Reserved         uint8  `json:",omitempty"`
-	EndOfDay         uint8  `json:",omitempty"`
-	UniqueFor        uint16 `json:",omitempty"`
-	ContentID        []byte `json:",omitempty"`
-	Upids            []Upid `json:",omitempty"`
-	FormatIdentifier string `json:",omitempty"`
-	PrivateData      []byte `json:",omitempty"`
+	NameTypeValue
+	Atsc
+	Mpu
+	Mid
 }
 
 // Decode Upids
@@ -93,10 +112,11 @@ func (upid *Upid) uri(bd *bitDecoder, upidlen uint8) {
 // Decode for ATSC Upid
 func (upid *Upid) atsc(bd *bitDecoder, upidlen uint8) {
 	upid.TSID = bd.uInt16(16)
-	upid.Reserved = bd.uInt8(2)
+	bd.goForward(2)
 	upid.EndOfDay = bd.uInt8(5)
 	upid.UniqueFor = bd.uInt16(9)
 	upid.ContentID = bd.asBytes(uint((upidlen - 4) << 3))
+	upid.NameTypeValue=upid.NameTypeValue
 }
 
 // Decode for EIDR Upid
@@ -116,6 +136,7 @@ func (upid *Upid) mpu(bd *bitDecoder, upidlen uint8) {
 	ulb := uint(upidlen) << 3
 	upid.FormatIdentifier = bd.asHex(32)
 	upid.PrivateData = bd.asBytes(ulb - 32)
+	upid.Mpu.NameTypeValue=upid.NameTypeValue
 }
 
 // Decode for MID Upid
@@ -132,7 +153,8 @@ func (upid *Upid) mid(bd *bitDecoder, upidlen uint8) {
 		upid.decode(bd, utype, ulen)
 		upid.Upids = append(upid.Upids, mupid)
 	}
-}
+	upid.Mid.NameTypeValue=upid.NameTypeValue
+	}
 
 // Encode Upids
 func (upid *Upid) encode(be *bitEncoder, upidType uint8) {
