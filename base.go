@@ -66,6 +66,12 @@ func mkJson(i interface{}) string {
 	return string(jason)
 }
 
+// MkJson structs to JSON
+func MkJson(i interface{}) string{
+    return mkJson(i)
+}
+
+
 // Take a JSON string and return a *Cue
 func Json2Cue(s string) *Cue {
 	b := []byte(s)
