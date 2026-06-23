@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"net/http"
 )
 
 // packetData holds information about the packet carrying a SCTE-35
@@ -25,6 +26,9 @@ const bufSz = 14000 * pktSz
 
 // mcastPrefix Multicast URI prefix
 const mcastPrefix = "udp://@"
+
+// httpPrefix http(s) URI prefix
+const httpPrefix = "http"
 
 // Stream for parsing MPEGTS for SCTE-35
 type Stream struct {
@@ -76,6 +80,8 @@ func (stream *Stream) Decode(fname string) []*Cue {
 	var cues []*Cue
 	if strings.HasPrefix(fname, mcastPrefix) {
 		cues = stream.DecodeMulticast(fname)
+	} else if strings.HasPrefix(fname, httpPrefix) {
+		cues = stream.DecodeHttp(fname)
 	} else {
 		file, err := os.Open(fname)
 		chk(err)
@@ -106,6 +112,35 @@ func (stream *Stream) DecodeMulticast(fname string) []*Cue {
 		cues = append(cues, stream.DecodeBytes(buffer)...)
 	}
 	return cues
+}
+
+
+func (stream *Stream) DecodeHttp(fname string) []*Cue {
+	stream.Pids = &Pids{}
+	stream.mkMaps()
+	var cues []*Cue
+	resp, err := http.Get(fname)
+    chk(err)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Bad status: %s\n", resp.Status)
+		return cues
+	}
+	buffer := make([]byte, 188*7000) 
+	for {
+		n, err := io.ReadFull(resp.Body,buffer)
+        chk(err)
+		if n > 0 {
+            cues = append(cues, stream.DecodeBytes(buffer)...)
+		}
+
+		if err == io.EOF {
+			fmt.Println("File download complete.")
+			return cues
+		}
+	}
+
+    return cues
 }
 
 
@@ -197,7 +232,7 @@ func (stream *Stream) parsePayload(pkt []byte) []byte {
 	return pkt[head:]
 }
 
-// chkPartial appends the current packet payload to partial table of the same pid.
+// chkPartial appends the current packet payload to partial table by pid.
 func (stream *Stream) chkPartial(pay []byte, pid uint16, sep []byte) []byte {
 	val, ok := stream.partial[pid]
 	if ok {
@@ -206,7 +241,7 @@ func (stream *Stream) chkPartial(pay []byte, pid uint16, sep []byte) []byte {
 	return splitByIdx(pay, sep)
 }
 
-// sameAsLast compares the current packet payload to the last packet payload by pid.
+// sameAsLast compares the current packet to the last packet by pid.
 func (stream *Stream) sameAsLast(pay []byte, pid uint16) bool {
 	val, ok := stream.last[pid]
 	if ok {
@@ -218,7 +253,7 @@ func (stream *Stream) sameAsLast(pay []byte, pid uint16) bool {
 	return false
 }
 
-// sectionDone aggregates partial tables by pid until the section is complete
+// sectionDone aggregates partial tables by pid until the section is complete.
 func (stream *Stream) sectionDone(pay []byte, pid uint16, seclen uint16) bool {
 	if seclen+3 > uint16(len(pay)) {
 		stream.partial[pid] = pay
@@ -228,7 +263,6 @@ func (stream *Stream) sectionDone(pay []byte, pid uint16, seclen uint16) bool {
 	return true
 }
 
-// ffmpeg puts PES headers on SCTE-35 packets, we strip them out.
 func (stream *Stream) stripScte35Pes(pay []byte, pid uint16) *[]byte {
 	scte35PesStart := []byte("\x00\x00\x01\xfc")
 	if bytes.Contains(pay, scte35PesStart) {
@@ -253,9 +287,9 @@ func (stream *Stream) parse(pkt []byte) {
 //	if stream.Pids.isPcrPid(*pid) {
 	//	stream.parsePcr(pkt, *pid)
 	//}
-	if stream.parsePusi(pkt) {
-		stream.parsePts(*pay, *pid)
-	}
+		if stream.parsePusi(pkt) {
+			stream.parsePts(*pay, *pid)
+		}
 	//}
 	if stream.Pids.isScte35Pid(*pid) {
 		pay = stream.stripScte35Pes(*pay, *pid)
