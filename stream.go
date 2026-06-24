@@ -62,14 +62,7 @@ func (stream *Stream) DecodeReader(rdr io.Reader) []*Cue {
 	buffer := make([]byte, bufSz)
 	for {
 		bytecount, err := rdr.Read(buffer)
-		
-		if err != nil {
-			if err != io.EOF {
-				fmt.Println("Error reading file:", err)
-			}
-			break 
-		}
-
+		chk(err)
 		cues = append(cues, stream.DecodeBytes(buffer[:bytecount])...)
 	}
 	return cues
@@ -79,9 +72,9 @@ func (stream *Stream) DecodeReader(rdr io.Reader) []*Cue {
 func (stream *Stream) Decode(fname string) []*Cue {
 	var cues []*Cue
 	if strings.HasPrefix(fname, mcastPrefix) {
-		cues = stream.DecodeMulticast(fname)
+		cues = stream.decodeMulticast(fname)
 	} else if strings.HasPrefix(fname, httpPrefix) {
-		cues = stream.DecodeHttp(fname)
+		cues = stream.decodeHttp(fname)
 	} else {
 		file, err := os.Open(fname)
 		chk(err)
@@ -97,7 +90,7 @@ Notes:
   - multicast urls start with udp://@
   - datagram size should be 1316
 */
-func (stream *Stream) DecodeMulticast(fname string) []*Cue {
+func (stream *Stream) decodeMulticast(fname string) []*Cue {
 	stream.Pids = &Pids{}
 	stream.mkMaps()
 	var cues []*Cue
@@ -114,8 +107,8 @@ func (stream *Stream) DecodeMulticast(fname string) []*Cue {
 	return cues
 }
 
-
-func (stream *Stream) DecodeHttp(fname string) []*Cue {
+// DecodeHttp Decode MPEGTS over HTTPS
+func (stream *Stream) decodeHttp(fname string) []*Cue {
 	stream.Pids = &Pids{}
 	stream.mkMaps()
 	var cues []*Cue
@@ -133,13 +126,7 @@ func (stream *Stream) DecodeHttp(fname string) []*Cue {
 		if n > 0 {
             cues = append(cues, stream.DecodeBytes(buffer)...)
 		}
-
-		if err == io.EOF {
-			fmt.Println("File download complete.")
-			return cues
-		}
 	}
-
     return cues
 }
 
@@ -284,13 +271,9 @@ func (stream *Stream) parse(pkt []byte) {
 	if stream.Pids.isPmtPid(*pid) {
 		stream.parsePmt(*pay, *pid)
 	}
-//	if stream.Pids.isPcrPid(*pid) {
-	//	stream.parsePcr(pkt, *pid)
-	//}
-		if stream.parsePusi(pkt) {
-			stream.parsePts(*pay, *pid)
-		}
-	//}
+    if stream.parsePusi(pkt) {
+        stream.parsePts(*pay, *pid)
+    }
 	if stream.Pids.isScte35Pid(*pid) {
 		pay = stream.stripScte35Pes(*pay, *pid)
 		stream.parseScte35(*pay, *pid)
