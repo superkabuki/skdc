@@ -2,6 +2,7 @@ package skdc
 
 import (
 	"bytes"
+    "io"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,11 +10,12 @@ import (
 )
 
 // chk generic catchall error checking
-func chk(e error) {
-	if e != nil {
-		fmt.Println(e)
-
-	}
+func chk(err error) {
+	if err != nil {
+        if err != io.EOF {
+            fmt.Println(err)
+        }
+    }
 }
 
 // decB64 decodes base64 strings.
