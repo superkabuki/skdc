@@ -2,7 +2,7 @@ package skdc
 
 import (
 	"bytes"
-    "fmt"
+   // "fmt"
 	"io"
 	"net"
 	"os"
@@ -62,6 +62,9 @@ func (stream *Stream) DecodeReader(rdr io.Reader) []*Cue {
 	buffer := make([]byte, bufSz)
 	for {
 		bytecount, err := rdr.Read(buffer)
+        if err == io.EOF {
+            return cues
+        }
 		chk(err)
 		cues = append(cues, stream.DecodeBytes(buffer[:bytecount])...)
 	}
@@ -77,22 +80,23 @@ func (stream *Stream) Decode(fname string) []*Cue {
 		cues = stream.decodeHttp(fname)
 	} else {
 		file, err := os.Open(fname)
+        defer file.Close()
+        if err == io.EOF {
+            return cues
+        }
 		chk(err)
-		defer file.Close()
 		cues = stream.DecodeReader(file)
 	}
 	return cues
 }
 
 /*
-Decode Multicast
+decodeMulticast
 Notes:
   - multicast urls start with udp://@
   - datagram size should be 1316
 */
 func (stream *Stream) decodeMulticast(fname string) []*Cue {
-	stream.Pids = &Pids{}
-	stream.mkMaps()
 	var cues []*Cue
 	dgram := 1316
 	straddr := strings.Replace(fname, mcastPrefix, "", -1)
@@ -107,21 +111,17 @@ func (stream *Stream) decodeMulticast(fname string) []*Cue {
 	return cues
 }
 
-// DecodeHttp Decode MPEGTS over HTTPS
 func (stream *Stream) decodeHttp(fname string) []*Cue {
-	stream.Pids = &Pids{}
-	stream.mkMaps()
 	var cues []*Cue
 	resp, err := http.Get(fname)
     chk(err)
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Bad status: %s\n", resp.Status)
-		return cues
-	}
 	buffer := make([]byte, 188*7000) 
 	for {
 		n, err := io.ReadFull(resp.Body,buffer)
+        if err == io.EOF {
+            return cues
+        }
         chk(err)
 		if n > 0 {
             cues = append(cues, stream.DecodeBytes(buffer)...)
@@ -168,7 +168,6 @@ func (stream *Stream) ptsFlag(pay []byte) bool {
 // parsePusi returns true if PUSI flag is set
 func (stream *Stream) parsePusi(pkt []byte) bool {
 	return (pkt[1]&0x40 == 0x40)
-
 }
 
 // parsePts parses a packet for PTS
@@ -371,9 +370,6 @@ func (stream *Stream) parseScte35(pay []byte, pid uint16) {
 			if !stream.Quiet {
 				cue.Show()
 			}
-		} else {
-			//stream.Pids.delScte35Pid(pid)
-			return
 		}
 	}
 }
