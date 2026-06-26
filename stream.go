@@ -2,7 +2,6 @@ package skdc
 
 import (
 	"bytes"
-   // "fmt"
 	"io"
 	"net"
 	"os"
@@ -22,7 +21,7 @@ type packetData struct {
 const pktSz = 188
 
 // bufSz is the size of a read when parsing files.
-const bufSz = 14000 * pktSz
+const bufSz = 28000 * pktSz
 
 // mcastPrefix Multicast URI prefix
 const mcastPrefix = "udp://@"
@@ -61,12 +60,13 @@ func (stream *Stream) DecodeReader(rdr io.Reader) []*Cue {
 	var cues []*Cue
 	buffer := make([]byte, bufSz)
 	for {
-		bytecount, err := rdr.Read(buffer)
+		bytecount, err := io.ReadFull(rdr,buffer)
+        cues = append(cues, stream.DecodeBytes(buffer[:bytecount])...)
+
         if err == io.EOF {
-            return cues
+            break
         }
-		chk(err)
-		cues = append(cues, stream.DecodeBytes(buffer[:bytecount])...)
+		//chk(err)
 	}
 	return cues
 }
@@ -80,11 +80,8 @@ func (stream *Stream) Decode(fname string) []*Cue {
 		cues = stream.decodeHttp(fname)
 	} else {
 		file, err := os.Open(fname)
+        chk(err)
         defer file.Close()
-        if err == io.EOF {
-            return cues
-        }
-		chk(err)
 		cues = stream.DecodeReader(file)
 	}
 	return cues
@@ -120,7 +117,7 @@ func (stream *Stream) decodeHttp(fname string) []*Cue {
 	for {
 		n, err := io.ReadFull(resp.Body,buffer)
         if err == io.EOF {
-            return cues
+            break
         }
         chk(err)
 		if n > 0 {
