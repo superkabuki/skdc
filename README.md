@@ -1,5 +1,5 @@
 
- [Install](#install-skdc)  | [Go Docs](https://pkg.go.dev/github.com/superkabuki/skdc)  | [Examples](https://pkg.go.dev/github.com/superkabuki/skdc) | 
+ [Install](#install-skdc)  | [Go Docs](https://pkg.go.dev/github.com/superkabuki/skdc)  | [Examples](https://pkg.go.dev/github.com/superkabuki/skdc#pkg-examples) | 
 
 # `S`uper `K`arate `D`eath `C`ar is a SCTE-35 Parser lib written in Go.
 # Encoder/Decoder for SCTE-35
