@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"strings"
-	"net/http"
 )
 
 // packetData holds information about the packet carrying a SCTE-35
@@ -21,7 +21,7 @@ type packetData struct {
 const pktSz = 188
 
 // bufSz is the size of a read when parsing files.
-const bufSz = 28000 * pktSz
+const bufSz = 14000 * pktSz
 
 // mcastPrefix Multicast URI prefix
 const mcastPrefix = "udp://@"
@@ -60,31 +60,42 @@ func (stream *Stream) DecodeReader(rdr io.Reader) []*Cue {
 	var cues []*Cue
 	buffer := make([]byte, bufSz)
 	for {
-		bytecount, err := io.ReadFull(rdr,buffer)
-        cues = append(cues, stream.DecodeBytes(buffer[:bytecount])...)
-
-        if err == io.EOF {
-            break
-        }
-		//chk(err)
+		n, err := io.ReadFull(rdr, buffer)
+		if n > 0 {
+			cues = append(cues, stream.DecodeBytes(buffer[:n])...)
+		}
+		if err == io.EOF {
+			return cues
+		}
 	}
 	return cues
 }
 
-// Decode fname (a file name) for SCTE-35
-func (stream *Stream) Decode(fname string) []*Cue {
-	var cues []*Cue
-	if strings.HasPrefix(fname, mcastPrefix) {
-		cues = stream.decodeMulticast(fname)
-	} else if strings.HasPrefix(fname, httpPrefix) {
-		cues = stream.decodeHttp(fname)
-	} else {
-		file, err := os.Open(fname)
-        chk(err)
-        defer file.Close()
-		cues = stream.DecodeReader(file)
+// Decode mpegts video for SCTE-35
+func (stream *Stream) Decode(video string) []*Cue {
+	if strings.HasPrefix(video, mcastPrefix) {
+		return stream.decodeMulticast(video)
 	}
-	return cues
+	if strings.HasPrefix(video, httpPrefix) {
+		return stream.decodeHttp(video)
+	}
+	return stream.decodeFile(video)
+}
+
+// decodeHttp
+func (stream *Stream) decodeHttp(video string) []*Cue {
+	resp, err := http.Get(video)
+	chk(err)
+	defer resp.Body.Close()
+	return stream.DecodeReader(resp.Body)
+}
+
+// decodeFile
+func (stream *Stream) decodeFile(video string) []*Cue {
+	file, err := os.Open(video)
+	chk(err)
+	defer file.Close()
+	return stream.DecodeReader(file)
 }
 
 /*
@@ -93,10 +104,10 @@ Notes:
   - multicast urls start with udp://@
   - datagram size should be 1316
 */
-func (stream *Stream) decodeMulticast(fname string) []*Cue {
+func (stream *Stream) decodeMulticast(video string) []*Cue {
 	var cues []*Cue
 	dgram := 1316
-	straddr := strings.Replace(fname, mcastPrefix, "", -1)
+	straddr := strings.Replace(video, mcastPrefix, "", -1)
 	addr, _ := net.ResolveUDPAddr("udp", straddr)
 	l, _ := net.ListenMulticastUDP("udp", nil, addr)
 	l.SetReadBuffer(1316 * 70000)
@@ -108,38 +119,18 @@ func (stream *Stream) decodeMulticast(fname string) []*Cue {
 	return cues
 }
 
-func (stream *Stream) decodeHttp(fname string) []*Cue {
-	var cues []*Cue
-	resp, err := http.Get(fname)
-    chk(err)
-	defer resp.Body.Close()
-	buffer := make([]byte, 188*7000) 
-	for {
-		n, err := io.ReadFull(resp.Body,buffer)
-        if err == io.EOF {
-            break
-        }
-        chk(err)
-		if n > 0 {
-            cues = append(cues, stream.DecodeBytes(buffer)...)
-		}
-	}
-    return cues
-}
-
-
 // DecodeBytes Parses a chunk of mpegts bytes for SCTE-35
 func (stream *Stream) DecodeBytes(bites []byte) []*Cue {
-	start:=0
+	start := 0
 	end := 0
 	for i := 1; i < (len(bites) / pktSz); i++ {
 		end = i * pktSz
-		if end > len(bites){
-			break;
+		if end > len(bites) {
+			break
 		}
 		p := bites[start:end]
 		pkt := &p
-		start=end
+		start = end
 		stream.parse(*pkt)
 	}
 	cues := stream.Cues
@@ -148,8 +139,8 @@ func (stream *Stream) DecodeBytes(bites []byte) []*Cue {
 }
 
 // afcFlag returns true if AFC flag is set
-func (stream *Stream) afcFlag(pkt []byte) bool {
-	return (pkt[3]&0x20 == 0x20)
+func (stream *Stream) afcFlag(pkt3 byte) bool {
+	return (pkt3&0x20 == 0x20)
 }
 
 // pcrFlag returns true if PCR flag is set
@@ -179,7 +170,7 @@ func (stream *Stream) parsePts(pay []byte, pid uint16) {
 				pts |= uint64(pay[12]) << 7
 				pts |= uint64(pay[13]) >> 1
 				stream.Prgm2Pts[prgm] = pts
-               // fmt.Println(pts)
+				// fmt.Println(pts)
 			}
 		}
 	}
@@ -187,7 +178,7 @@ func (stream *Stream) parsePts(pay []byte, pid uint16) {
 
 // parsePcr parses a packet for PCR
 func (stream *Stream) parsePcr(pkt []byte, pid uint16) {
-	if stream.afcFlag(pkt) {
+	if stream.afcFlag(pkt[3]) {
 		if stream.pcrFlag(pkt) {
 			prgm, ok := stream.Pid2Prgm[pid]
 			if ok {
@@ -205,7 +196,7 @@ func (stream *Stream) parsePcr(pkt []byte, pid uint16) {
 // parsePay packet payload starts after header and afc (if present)
 func (stream *Stream) parsePayload(pkt []byte) []byte {
 	head := 4
-	if stream.afcFlag(pkt) {
+	if stream.afcFlag(pkt[3]) {
 		afl := int(pkt[4])
 		head += afl + 1
 	}
@@ -267,9 +258,9 @@ func (stream *Stream) parse(pkt []byte) {
 	if stream.Pids.isPmtPid(*pid) {
 		stream.parsePmt(*pay, *pid)
 	}
-    if stream.parsePusi(pkt) {
-        stream.parsePts(*pay, *pid)
-    }
+	if stream.parsePusi(pkt) {
+		stream.parsePts(*pay, *pid)
+	}
 	if stream.Pids.isScte35Pid(*pid) {
 		pay = stream.stripScte35Pes(*pay, *pid)
 		stream.parseScte35(*pay, *pid)
@@ -311,7 +302,7 @@ func (stream *Stream) parsePmt(pay []byte, pid uint16) {
 		return
 	}
 	pay = stream.chkPartial(pay, pid, []byte("\x02"))
-	if len(pay) < 12{
+	if len(pay) < 12 {
 		return
 	}
 	secinfolen := parseLen(pay[1], pay[2])
@@ -356,7 +347,7 @@ func (stream *Stream) parseScte35(pay []byte, pid uint16) {
 	pay = stream.chkPartial(pay, pid, []byte("\xfc"))
 	//fmt.Printf("%q\n",pay)
 	if len(pay) < 3 {
-	//	stream.Pids.delScte35Pid(pid)
+		//	stream.Pids.delScte35Pid(pid)
 		return
 	}
 	seclen := parseLen(pay[1], pay[2])
