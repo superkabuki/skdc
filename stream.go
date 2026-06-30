@@ -105,18 +105,11 @@ Notes:
   - datagram size should be 1316
 */
 func (stream *Stream) decodeMulticast(video string) []*Cue {
-	var cues []*Cue
-	dgram := 1316
 	straddr := strings.Replace(video, mcastPrefix, "", -1)
 	addr, _ := net.ResolveUDPAddr("udp", straddr)
-	l, _ := net.ListenMulticastUDP("udp", nil, addr)
-	l.SetReadBuffer(1316 * 70000)
-	for {
-		buffer := make([]byte, dgram)
-		l.ReadFromUDP(buffer)
-		cues = append(cues, stream.DecodeBytes(buffer)...)
-	}
-	return cues
+	l, err := net.ListenMulticastUDP("udp", nil, addr)
+    chk(err)
+    return stream.DecodeReader(l)
 }
 
 // DecodeBytes Parses a chunk of mpegts bytes for SCTE-35
