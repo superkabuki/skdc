@@ -102,7 +102,6 @@ func (stream *Stream) decodeFile(video string) []*Cue {
 decodeMulticast
 Notes:
   - multicast urls start with udp://@
-  - datagram size should be 1316
 */
 func (stream *Stream) decodeMulticast(video string) []*Cue {
 	straddr := strings.Replace(video, mcastPrefix, "", -1)
@@ -116,7 +115,7 @@ func (stream *Stream) decodeMulticast(video string) []*Cue {
 func (stream *Stream) DecodeBytes(bites []byte) []*Cue {
 	start := 0
 	end := 0
-	for i := 1; i < (len(bites) / pktSz); i++ {
+	for i := 1; i <= (len(bites) / pktSz); i++ {
 		end = i * pktSz
 		if end > len(bites) {
 			break
